@@ -1,0 +1,45 @@
+{
+  // --------------------
+  // Global editor behavior
+  // --------------------
+  "editor.formatOnSave": true,
+
+  // --------------------
+  // JavaScript / TypeScript (Prettier)
+  // --------------------
+  "editor.defaultFormatter": "esbenp.prettier-vscode",
+
+  "[javascript]": {
+    "editor.defaultFormatter": "esbenp.prettier-vscode"
+  },
+  "[typescript]": {
+    "editor.defaultFormatter": "esbenp.prettier-vscode"
+  },
+  "[javascriptreact]": {
+    "editor.defaultFormatter": "esbenp.prettier-vscode"
+  },
+  "[typescriptreact]": {
+    "editor.defaultFormatter": "esbenp.prettier-vscode"
+  },
+
+  // --------------------
+  // Solidity (Official Formatter)
+  // --------------------
+  "[solidity]": {
+    "editor.defaultFormatter": "juanblanco.solidity"
+  },
+
+  "solidity.formatter": "solidity",
+  "solidity.formatterSettings": {
+    "printWidth": 80,
+    "tabWidth": 4,
+    "bracketSpacing": true
+  },
+
+  // --------------------
+  // ESLint auto-fix on save (JS/TS only)
+  // --------------------
+  "editor.codeActionsOnSave": {
+    "source.fixAll.eslint": "explicit"
+  }
+}
