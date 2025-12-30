@@ -1,250 +1,265 @@
-# Cross-Chain Rebase Token using Chainlink CCIP
+# Cross-chain Rebase Token — Overview
 
-**Author:** Sivaji (`DecentralizedGlasses`)  
-**Tech Stack:** Solidity · Foundry · Chainlink CCIP  
-**Project Type:** Advanced DeFi / Cross-Chain Token Prototype
+A **cross-chain, interest-bearing ERC20 token** that:
 
----
+- Mints **1:1** against ETH deposits into a vault
+- Accrues interest **linearly over time** with a **per-user interest rate fixed at deposit time**
+- Bridges across chains using **Chainlink CCIP**, preserving each user’s interest rate on the destination chain
 
-## 📌 Overview
-
-This project implements a **cross-chain rebasing ERC20 token** that can be securely transferred between multiple blockchains using **Chainlink CCIP (Cross-Chain Interoperability Protocol)**.
-
-Unlike traditional bridge tokens, this system preserves **rebasing behavior across chains**, ensuring user balances remain mathematically correct after cross-chain transfers.
-
-The project is designed to reflect **real-world DeFi architecture**, with proper separation of concerns, restricted minting, and professional-grade testing using **Foundry**, **local simulators**, and **forked networks**.
+This repository is a **Foundry-based project** demonstrating a **CCIP-enabled rebasing token** where the **global interest rate can only decrease**, rewarding early adopters while maintaining cross-chain yield fidelity.
 
 ---
 
-## 🎯 Project Goals
+## High-level Design
 
-- Enable secure cross-chain token transfers using Chainlink CCIP
-- Support rebasing (interest-based balance scaling)
-- Maintain consistent token supply across chains
-- Avoid repeated live testnet deployments
-- Demonstrate production-style DeFi contract architecture
+The system is composed of three core components:
 
----
+- **Vault**: Accepts ETH deposits and handles minting/redemption
+- **RebaseToken**: ERC20 token with dynamic balances based on linear interest accrual
+- **RebaseTokenPool**: Chainlink CCIP integration layer enabling cross-chain transfers
 
-## 🧠 Why This Project Matters
+Key properties:
 
-Cross-chain rebasing tokens are complex because they must handle:
-
-- Balance scaling (rebasing)
-- Cross-chain state synchronization
-- Secure mint/burn permissions
-- Accurate supply accounting
-
-This project demonstrates how these challenges can be solved using:
-
-- Token Pool architecture
-- Chainlink CCIP messaging
-- Encoded rebasing metadata
-- Controlled minting logic
-- Fork-based testing strategies
+- Interest is computed **on demand**, not via periodic rebases
+- Each user’s interest rate is locked at mint time
+- Cross-chain transfers preserve the user’s yield profile
 
 ---
 
-## 🏗️ Architecture Overview
+## Contracts Overview
 
-User
-└── RebaseToken (ERC20 with rebasing)
-└── RebaseTokenPool (per chain)
-├── lockOrBurn() // source chain
-├── releaseOrMint() // destination chain
-└── Chainlink CCIP Router
+### Vault (`Vault.sol`)
 
-Each blockchain contains:
-
-- Its own `RebaseToken`
-- Its own `RebaseTokenPool`
-- CCIP routes configured between pools
+- Accepts ETH deposits and mints rebase tokens **1:1** with deposited ETH
+- Users can redeem rebase tokens for ETH
+- Passing `type(uint256).max` redeems the full balance
+- Emits `Deposit` and `Redeem` events for indexing and integrations
 
 ---
 
-## 📦 Core Contracts
+### Rebase Token (`RebaseToken.sol`)
 
-### RebaseToken.sol
+ERC20 token with **dynamic `balanceOf`**.
 
-- ERC20-compatible token
-- Supports interest-based rebasing
-- Balances scale using a global interest rate
-- Minting restricted to authorized TokenPools only
+**Balance formula**
 
-### RebaseTokenPool.sol
+```
+balanceOf(user) = principal × (1 + r_user × Δt)
+```
 
-- Implements Chainlink CCIP token pool interface
-- Handles:
-  - `lockOrBurn()` on the source chain
-  - `releaseOrMint()` on the destination chain
-- Encodes and decodes rebasing metadata
-- Enforces cross-chain permissions
+- Accrual is linear since the user’s last interaction
+- No global rebases; interest is calculated lazily
 
-### Vault.sol (Optional)
+**Interest model**
 
-- Authorization or custody abstraction
-- Isolates minting permissions from token logic
+- **Global interest rate**
+  - Stored as `s_interestRate`
+  - Can only decrease over time
+  - Controlled by the contract owner
+- **Per-user interest rate**
+  - Fixed at mint / deposit time
+  - Does not change even if the global rate decreases
 
----
+**Accrual triggers**
 
-## 🔁 Cross-Chain Transfer Flow
+Interest is realized on:
 
-### Source Chain
+- `mint` (vault deposits)
+- `burn` (vault redemptions and cross-chain burns)
+- `transfer` and `transferFrom` (sender and recipient)
 
-1. User initiates bridge transaction
-2. Tokens are burned or locked
-3. Rebasing metadata is encoded
-4. CCIP message is sent to destination chain
+**Access control**
 
-### Destination Chain
-
-1. CCIP message is received
-2. Rebasing metadata is decoded
-3. Tokens are minted or released
-4. User receives rebased tokens
-
-✔️ Supply consistency maintained  
-✔️ Rebasing math preserved  
-✔️ No trusted third party
+- Uses `Ownable` + `AccessControl`
+- `MINT_AND_BURN_ROLE` required for minting and burning
+- Role granted to the Vault and RebaseTokenPool
 
 ---
 
-## 🧪 Testing Strategy
+### Rebase Token Pool (`RebaseTokenPool.sol`)
 
-The project uses **Foundry** for testing with:
+- Extends **Chainlink CCIP TokenPool**
+- Enables cross-chain transfers of the rebasing token
 
-- Local CCIP simulator tests
-- Forked testnet testing (Sepolia ↔ Arbitrum Sepolia)
-- Bridge flow validation
-- Permission and role checks
-- Rebasing correctness verification
+**On lock / burn (source chain)**
 
-This approach enables realistic testing without repeated live deployments.
+- Burns tokens on the source chain
+- Reads the user’s per-user interest rate
+- Encodes the rate into `destPoolData`
+
+**On release / mint (destination chain)**
+
+- Decodes the interest rate
+- Mints tokens with the same per-user rate
+- Preserves the user’s yield profile across chains
 
 ---
 
-## 📂 Project Structure
+## Cross-chain Flow (Example: Sepolia ↔ Base Sepolia)
+
+1. **Deploy contracts on Base Sepolia**  
+   RebaseToken and RebaseTokenPool are deployed and configured.
+
+2. **Deploy contracts on Sepolia**  
+   The same contracts are deployed on Sepolia.
+
+3. **Deploy Vault on Sepolia**  
+   Vault is initialized with the Sepolia RebaseToken address.
+
+4. **Configure CCIP Pools**  
+   Each RebaseTokenPool is configured to recognize its counterpart pool and token.
+
+5. **Deposit & Accrue Interest**  
+   Users deposit ETH into the Sepolia Vault, minting rebase tokens at the current global interest rate.
+
+6. **Bridge Tokens via CCIP**  
+   Tokens are bridged to Base Sepolia.  
+   The user’s per-user interest rate is carried in the CCIP message and applied on the destination chain.
+
+---
+
+## Project Structure
 
 .
 ├── src/
 │ ├── RebaseToken.sol
 │ ├── RebaseTokenPool.sol
-│ ├── Vault.sol
+│ └── Vault.sol
 │
 ├── test/
 │ ├── BridgeTest.t.sol
 │ ├── RebaseTokenTest.t.sol
-│ ├── ForkedBridgeTest.t.sol
+│ └── ForkedBridgeTest.t.sol
 │
 ├── script/
-│ ├── Deploy.s.sol
-│ ├── bridgeToZksync.sh
+│ ├── Deployer.s.sol
+│ ├── ConfigurePool.s.sol
+│ ├── BridgeTokens.s.sol
+│ └── bridgeToZksync.sh
 │
 ├── lib/
-│ ├── forge-std
-│ ├── chainlink
+│ ├── forge-std/
+│ └── chainlink/
 │
 ├── foundry.toml
+├── Makefile
 ├── .env
 └── README.md
 
----
+## Local Development
 
-## 🚀 Running the Project Locally (Individual User)
+This project uses **Foundry**.
 
-### Prerequisites
-
-- Git
-- Foundry
-- Node.js (optional)
-
-Install Foundry:
-
-````bash
-curl -L https://foundry.paradigm.xyz | bash
-foundryup
-
-
-## 🚀 Running the Project Locally (Individual User)
-
-### Clone the Repository
+### Install Dependencies
 
 ```bash
-git clone https://github.com/rosarioborgesi/foundry-cross-chain-rebase-token.git
-cd foundry-cross-chain-rebase-token
-Install Dependencies
-bash
-Copy code
-forge install
-Environment Configuration
-Create a .env file in the project root:
+make install
 
-env
-Copy code
-PRIVATE_KEY=your_private_key
-SEPOLIA_RPC_URL=your_rpc_url
-ARBITRUM_SEPOLIA_RPC_URL=your_rpc_url
-⚠️ Never commit private keys to GitHub.
+```
 
-Run Tests
-Run all tests:
+#### Build
 
-bash
-Copy code
-forge test -vvv
-Run forked tests:
+```
+make build
+```
 
-bash
-Copy code
-forge test --fork-url $SEPOLIA_RPC_URL -vvv
-Deploy Contracts (Optional)
-bash
-Copy code
-forge script script/Deploy.s.sol \
-  --rpc-url $SEPOLIA_RPC_URL \
-  --broadcast \
-  --private-key $PRIVATE_KEY
-Bridge Tokens Using Script
-bash
-Copy code
+#### Run Tests
+
+```
+make test
+```
+
+#### Format
+
+```
+make format
+```
+
+#### Coverage
+
+```
+make coverage
+```
+
+#### Local Anvil Node
+
+```
+make anvil
+```
+
+### Deployment & Bridging
+
+- Environment
+- Create a .env file with at least:
+
+```
+SEPOLIA_RPC_URL=...
+BASE_SEPOLIA_RPC_URL=...
+ARBITRUM_SEPOLIA_RPC_URL=...   # optional, for testing
+PRIVATE_KEY=...
+```
+
+## Scripts
+
+- script/Deployer.s.sol
+  Deploys RebaseToken, RebaseTokenPool, and Vault.
+
+- script/ConfigurePool.s.sol
+  Configures CCIP token pool connections across chains.
+
+- script/BridgeTokens.s.sol
+  Initiates a cross-chain transfer via CCIP.
+
+## Convenience Script
+
+```
+chmod +x bridgeToZksync.sh
 ./bridgeToZksync.sh
-This script deploys the required contracts, configures CCIP routes, and performs a sample cross-chain token transfer.
+```
 
-🔐 Security Notes
-Minting is strictly restricted to TokenPools
+# Key Ideas
 
-Cross-chain messages are validated via Chainlink CCIP
+##### Per-user fixed interest rate
 
-No externally accessible admin minting
+- Each user’s rate is locked at deposit time and never changes.
 
-Not audited — for educational and testing purposes only
+##### Global rate can only decrease
 
-📚 Learning Outcomes
-This project helps understand:
+- Early adopters benefit from higher yields.
 
-Chainlink CCIP internals
+##### Cross-chain fidelity
 
-Cross-chain token pool architecture
+- Yield profiles are preserved when moving across chains.
 
-Rebasing token mechanics
+##### Rebase via balanceOf
 
-Secure mint/burn patterns
+- Interest is computed lazily and settled on user actions, avoiding mass rebases.
 
-Professional DeFi testing workflows
+### Pros and Cons
 
-🔮 Future Improvements
-Multi-chain routing support
+#### Pros
 
-Gas optimizations
+- Preserves user yield across chains
+- No periodic rebases (gas-efficient)
+- Rewards early adopters via decreasing global rate
+- Clean separation of concerns (Vault, Token, Pool)
+- Realistic CCIP-based cross-chain architecture
 
-Formal verification
+#### Cons
 
-Frontend UI for bridging
+- Increased complexity compared to standard ERC20 tokens
+- Cross-chain logic depends on CCIP availability
+- Not audited; intended for educational and experimental use
+- Linear interest model may not fit all yield strategies
 
-Audit-ready hardening
+### Future Developments
 
-👤 Author
-Sivaji
-Blockchain & Full-Stack Developer
-GitHub: https://github.com/DecentralizedGlasses
-````
+- Support for additional chains and multi-hop routing
+- Gas optimizations in accrual settlement
+- Formal verification of interest and bridging logic
+- Frontend UI for deposits and cross-chain bridging
+- Audit hardening and production-readiness improvements
+
+### Author
+
+Sivaji (DecentralizedGlasses)
