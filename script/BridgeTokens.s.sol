@@ -23,8 +23,8 @@ contract BridgeTokensScript is Script {
             receiver: abi.encode(receiverAddress), // Receiver address MUST be abi.encode()'d
             data: "", // Empty bytes as we are sending no data payload
             tokenAmounts: tokenAmounts, // The array of token transfers defined above
-            feeToken: linkTokenAddress,  // Address of the token used for CCIP fees (LINK)
-            extraArgs: Client._argsToBytes(Client.EVMExtraArgsV1({gasLimit: 0}))  // Encoded extra arguments
+            feeToken: linkTokenAddress, // Address of the token used for CCIP fees (LINK)
+            extraArgs: Client._argsToBytes(Client.EVMExtraArgsV1({gasLimit: 0})) // Encoded extra arguments
         });
         // Cast routerAddress to IRouterClient to call its functions
         uint256 ccipFee = IRouterClient(routerAddress).getFee(destinationChainSelector, message);
